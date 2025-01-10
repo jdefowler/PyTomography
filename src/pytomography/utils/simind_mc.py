@@ -1,16 +1,20 @@
 from __future__ import annotations
 from typing import Sequence
+import os
 import time
 import subprocess
 import tempfile
+from copy import copy
 import numpy as np
+import pytomography
 from pytomography.io.SPECT import dicom, simind
-import os
 from pytomography.callbacks import Callback
 from pytomography.likelihoods import Likelihood
 from pytomography.metadata import ObjectMeta
 from pytomography.metadata.SPECT import SPECTProjMeta
 from pytomography.utils.scatter import get_smoothed_scatter
+from pytomography.projectors.SPECT import SPECTSystemMatrix
+from pytomography.likelihoods import PoissonLogLikelihood
 import torch
 
 def save_attenuation_map(
@@ -31,16 +35,19 @@ def save_attenuation_map(
     
 def save_source_map(
     source_map: torch.Tensor,
-    temp_path: str
+    temp_path: str,
+    vmax: float = 1.0e6
 ):
     """Save source map as binary file to temporary directory for subsequent use by Monte Carlo scatter simulation.
 
     Args:
         source_map (torch.Tensor): Source map to save
         temp_path (str): Temporary folder to save to
+        vmax (float, optional): Maximum value of source map, prevents divergence at early iterations. Defaults to 1e6.
     """
+    source_map = source_map.clamp(0, vmax)
     d = source_map.cpu().numpy().astype(np.float32)
-    d *= 1e3 / d.sum()
+    d *= 1e6 / d.sum()
     d_flat = d.swapaxes(0,2).ravel()
     d_flat.tofile(os.path.join(temp_path, f'source_act_av.bin'))
 
@@ -67,7 +74,7 @@ def get_simind_params_from_metadata(
         '28': proj_meta.dr[0], # pixel spacing
         '29': num_angles, # number of projetions
         '30': index_30,
-        '41': proj_meta.angles[0].item(), # first angle
+        '41': -proj_meta.angles[0].item(), # first angle
         '76': proj_meta.shape[-2], # number of pixels in projection (X)
         '77': proj_meta.shape[-1], # number of pixels in projection (Y)
         '78': object_meta.shape[0], # X voxels (source)
@@ -82,6 +89,8 @@ def get_simind_params_from_metadata(
         '05': object_meta.dr[2]*object_meta.shape[2]/2, # size of CT phantom
         '06': object_meta.dr[0]*object_meta.shape[0]/2, # size of CT phantom
         '07': object_meta.dr[1]*object_meta.shape[1]/2, # size of CT phantom
+        '08': object_meta.dr[0]*object_meta.shape[0]/2,
+        '10': object_meta.dr[2]*object_meta.shape[2]/2,
     }
     return index_dict
 
@@ -241,7 +250,7 @@ def run_scatter_simulation(
     # Radial positions
     np.savetxt(os.path.join(temp_dir.name, f'radii_corfile.cor'), proj_meta.radii)
     # update number of events per parallel simulation
-    simind_index_dict.update({'NN':n_events/n_parallel/1e3})
+    simind_index_dict.update({'NN':n_events/n_parallel/1e6})
     # Save attenuation map and source map to TEMP directory
     save_attenuation_map(attenuation_map_140keV, object_meta.dr[0], temp_dir.name)
     save_source_map(source_map, temp_dir.name)
@@ -375,3 +384,101 @@ class MonteCarloScatterCallback(Callback):
         if ((n_iter+1) % self.run_every_iter == 0) * ((n_iter+1) < self.final_iter) * ((n_subset+1) % self.run_every_subsets == 0):
             self.run_scatter_simulation(object)
         return object
+
+class MonteCarloHybridSPECTSystemMatrix(SPECTSystemMatrix):
+    def __init__(
+        self,
+        object_meta,
+        proj_meta,
+        obj2obj_transforms,
+        proj2proj_transforms,
+        attenuation_map_140keV,
+        energy_window_params,
+        primary_window_idx,
+        isotope_name,
+        collimator_type,
+        crystal_thickness,
+        cover_thickness,
+        backscatter_thickness,
+        energy_resolution_140keV,
+        advanced_collimator_modeling,
+        n_events,
+        n_parallel
+    ):
+        super().__init__(
+            obj2obj_transforms,
+            proj2proj_transforms,
+            object_meta,
+            proj_meta,
+            object_initial_based_on_camera_path=True,
+        )
+        self.attenuation_map_140keV = attenuation_map_140keV
+        self.energy_window_params = energy_window_params
+        self.isotope_name = isotope_name
+        self.collimator_type = collimator_type
+        self.cover_thickness = cover_thickness
+        self.crystal_thickness = crystal_thickness  
+        self.backscatter_thickness = backscatter_thickness
+        self.energy_resolution_140keV = energy_resolution_140keV
+        self.advanced_collimator_modeling = advanced_collimator_modeling
+        self.primary_window_idx = primary_window_idx
+        self.n_events = n_events
+        self.n_parallel = n_parallel
+        
+    def _get_proj_meta_subset(self, subset_idx):
+        indices_array = self.subset_indices_array[subset_idx]
+        print(indices_array)
+        proj_meta_new = copy(self.proj_meta)
+        proj_meta_new.angles = proj_meta_new.angles[indices_array]
+        proj_meta_new.radii = proj_meta_new.radii[indices_array.cpu().numpy()]
+        proj_meta_new.shape = (len(indices_array), proj_meta_new.shape[1], proj_meta_new.shape[2])
+        proj_meta_new.padded_shape = (len(indices_array), proj_meta_new.padded_shape[1], proj_meta_new.padded_shape[2])
+        proj_meta_new.num_projections = len(indices_array)
+        return proj_meta_new
+        
+    def forward(self, object, subset_idx=None):
+        # subsample proj_meta
+        if subset_idx is not None:
+            proj_meta = self._get_proj_meta_subset(subset_idx)
+        else:
+            proj_meta = self.proj_meta
+        index_dict = get_simind_params_from_metadata(self.object_meta, proj_meta)
+        index_dict.update(get_simind_isotope_detector_params(
+            isotope_name = self.isotope_name,
+            collimator_type= self.collimator_type,
+            crystal_thickness=self.crystal_thickness,
+            cover_thickness=self.cover_thickness,
+            backscatter_thickness=self.backscatter_thickness,
+            energy_resolution_140keV=self.energy_resolution_140keV
+        ))
+        if self.advanced_collimator_modeling:
+            index_dict.update({'53':'1','59':'1'})
+        projections = run_scatter_simulation(
+            object,
+            self.attenuation_map_140keV,
+            self.object_meta,
+            proj_meta,
+            self.energy_window_params,
+            [self.primary_window_idx],
+            index_dict,
+            self.n_events,
+            self.n_parallel,
+            return_total=True,
+        )
+        projections = projections * object.sum()
+        return projections
+        
+class MonteCarloHybridSPECTPoissonLogLikelihood(PoissonLogLikelihood):
+    def compute_gradient(
+        self,
+        object: torch.Tensor,
+        subset_idx: int | None = None,
+        norm_BP_subset_method: str = 'subset_specific'
+        ) -> torch.Tensor:
+        proj_subset = self._get_projection_subset(self.projections, subset_idx)
+        additive_term_subset = self._get_projection_subset(self.additive_term, subset_idx)
+        self.projections_predicted = self.system_matrix.forward(object, subset_idx) + additive_term_subset
+        mask = self.projections_predicted > 0
+        ratio = mask * proj_subset / (self.projections_predicted + pytomography.delta)
+        norm_BP = self._get_normBP(subset_idx)
+        return self.system_matrix.backward(ratio, subset_idx) - norm_BP

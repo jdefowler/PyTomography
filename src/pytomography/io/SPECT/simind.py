@@ -25,13 +25,14 @@ def get_metadata(headerfile: str, distance: str = 'cm', corrfile: str | None = N
     Returns:
         (SPECTObjectMeta, SPECTProjMeta, torch.Tensor[1, Ltheta, Lr, Lz]): Required information for reconstruction in PyTomography.
     """
-    if distance=='mm':
-        scale_factor = 1/10
-    elif distance=='cm':
-        scale_factor = 1    
     with open(headerfile) as f:
         headerdata = f.readlines()
     headerdata = np.array(headerdata)
+    simind_version = get_header_value(headerdata, 'program version ', str)
+    if float(simind_version[1:2])>=8:
+        scale_factor = 1/10 # convert all mm to cm
+    else:
+        scale_factor = 1
     proj_dim1 = get_header_value(headerdata, 'matrix size [1]', int)
     proj_dim2 = get_header_value(headerdata, 'matrix size [2]', int)
     dx = get_header_value(headerdata, 'scaling factor (mm/pixel) [1]', np.float32) / 10 # to mm
