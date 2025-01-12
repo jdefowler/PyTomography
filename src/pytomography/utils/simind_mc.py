@@ -220,7 +220,6 @@ def run_scatter_simulation(
     object_meta: ObjectMeta,
     proj_meta: SPECTProjMeta,
     energy_window_params: list,
-    primary_window_idxs: Sequence[int],
     simind_index_dict: dict,
     n_events: int,
     n_parallel: int = 1,
@@ -269,9 +268,9 @@ def run_scatter_simulation(
             print(f"Error in process {p.args}:\n{error_output}")
     time.sleep(0.1) # sometimes the last file is not written yet
     # Add together projection data from all seperate processes
-    add_together(n_parallel, len(primary_window_idxs), temp_dir.name)
-    proj_simind_scatter = simind.get_projections([f'{temp_dir.name}/sca_w{i+1}.h00' for i in range(len(primary_window_idxs))])
-    proj_simind_tot = simind.get_projections([f'{temp_dir.name}/tot_w{i+1}.h00' for i in range(len(primary_window_idxs))])
+    add_together(n_parallel, len(energy_window_params), temp_dir.name)
+    proj_simind_scatter = simind.get_projections([f'{temp_dir.name}/sca_w{i+1}.h00' for i in range(len(energy_window_params))])
+    proj_simind_tot = simind.get_projections([f'{temp_dir.name}/tot_w{i+1}.h00' for i in range(len(energy_window_params))])
     # Remove data files from temporary directory
     temp_dir.cleanup()
     # Return data
@@ -307,7 +306,7 @@ class MonteCarloScatterCallback(Callback):
         attenuation_map_140keV: torch.Tensor,
         calibration_factor: float,
         energy_window_params: list,
-        primary_window_idxs: list,
+        primary_window_idx: int,
         n_events = 1e6,   
         n_parallel = 1,
         run_every_iter = 1,
@@ -324,7 +323,7 @@ class MonteCarloScatterCallback(Callback):
         self.attenuation_map_140keV = attenuation_map_140keV
         self.calibration_factor = calibration_factor
         self.energy_window_params = energy_window_params
-        self.primary_window_idxs = primary_window_idxs
+        self.primary_window_idx = primary_window_idx
         self.n_events = n_events
         self.n_parallel = n_parallel
         self.run_every_iter = run_every_iter
@@ -348,12 +347,11 @@ class MonteCarloScatterCallback(Callback):
             object_meta = self.likelihood.system_matrix.object_meta,
             proj_meta = self.likelihood.system_matrix.proj_meta,
             energy_window_params=self.energy_window_params,
-            primary_window_idxs = self.primary_window_idxs,
             simind_index_dict = self.index_dict,
             n_events = self.n_events,   
             n_parallel = self.n_parallel,
             return_total = self.return_total
-        ) / self.calibration_factor * object.sum()
+        )[primary_window_idx] / self.calibration_factor * object.sum()
         # Smooth scatter if sigmas are given
         self.scatter_MC = get_smoothed_scatter(
             scatter = self.scatter_MC,
@@ -459,12 +457,11 @@ class MonteCarloHybridSPECTSystemMatrix(SPECTSystemMatrix):
             self.object_meta,
             proj_meta,
             self.energy_window_params,
-            [self.primary_window_idx],
             index_dict,
             self.n_events,
             self.n_parallel,
             return_total=True,
-        )
+        )[self.primary_window_idx]
         projections = projections * object.sum()
         return projections
         
@@ -480,5 +477,7 @@ class MonteCarloHybridSPECTPoissonLogLikelihood(PoissonLogLikelihood):
         self.projections_predicted = self.system_matrix.forward(object, subset_idx) + additive_term_subset
         mask = self.projections_predicted > 0
         ratio = mask * proj_subset / (self.projections_predicted + pytomography.delta)
-        norm_BP = self._get_normBP(subset_idx)
+        ratio[ratio>1000] = 1000
+        #norm_BP = self._get_normBP(subset_idx)
+        norm_BP = self.system_matrix.backward(mask, subset_idx)
         return self.system_matrix.backward(ratio, subset_idx) - norm_BP
