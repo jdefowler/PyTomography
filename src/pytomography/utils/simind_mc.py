@@ -15,6 +15,7 @@ from pytomography.metadata.SPECT import SPECTProjMeta
 from pytomography.utils.scatter import get_smoothed_scatter
 from pytomography.projectors.SPECT import SPECTSystemMatrix
 from pytomography.likelihoods import PoissonLogLikelihood
+import pydicom
 import torch
 
 def save_attenuation_map(
@@ -132,7 +133,7 @@ def get_simind_isotope_detector_params(
 
 def get_energy_window_params_dicom(
     file_NM: str,
-    idxs: Sequence[int]
+    idxs: Sequence[int] | None = None
 ) -> Sequence[str]:
     """Obtain energy window parameters from a DICOM file: this includes a list of strings which, when written to a file, correspond to a typical "scattwin.win" file used by SIMIND.
 
@@ -144,6 +145,9 @@ def get_energy_window_params_dicom(
         Sequence[str]: Lines of the "scattwin.win" file corresponding to the energy windows specified by the indices.
     """
     lines = []
+    if idxs is None:
+        num_energy_windows = len(pydicom.dcmread(file_NM).EnergyWindowInformationSequence)
+        idxs = range(num_energy_windows)
     for idx in idxs:
         lower, upper = dicom.get_energy_window_bounds(file_NM, idx)
         lines.append(f'{lower},{upper},0')
