@@ -248,7 +248,7 @@ def run_scatter_simulation(
     """
     temp_dir = tempfile.TemporaryDirectory()
     # Create window file
-    with open(os.path.join(temp_dir.name, 'scattwin.win'), 'w') as f:
+    with open(os.path.join(temp_dir.name, 'simind.win'), 'w') as f:
         f.write('\n'.join(energy_window_params))
     # Radial positions
     np.savetxt(os.path.join(temp_dir.name, f'radii_corfile.cor'), proj_meta.radii)
@@ -275,6 +275,10 @@ def run_scatter_simulation(
     add_together(n_parallel, len(energy_window_params), temp_dir.name)
     proj_simind_scatter = simind.get_projections([f'{temp_dir.name}/sca_w{i+1}.h00' for i in range(len(energy_window_params))])
     proj_simind_tot = simind.get_projections([f'{temp_dir.name}/tot_w{i+1}.h00' for i in range(len(energy_window_params))])
+    # if length of energy window params is 1 then we need to unsqueeze
+    if len(energy_window_params) == 1:
+        proj_simind_scatter = proj_simind_scatter.unsqueeze(0)
+        proj_simind_tot = proj_simind_tot.unsqueeze(0)
     # Remove data files from temporary directory
     temp_dir.cleanup()
     # Return data
