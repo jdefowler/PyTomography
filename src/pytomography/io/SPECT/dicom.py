@@ -154,6 +154,7 @@ def get_projections(
     file: str,
     index_peak: None | int = None,
     index_time: None | int = None,
+    use_FOV_mask: bool = False,
 ) -> Sequence[SPECTObjectMeta, SPECTProjMeta, torch.Tensor]:
     """Gets projections from a .dcm file.
 
@@ -161,6 +162,7 @@ def get_projections(
         file (str): Path to the .dcm file of SPECT projection data.
         index_peak (int): If not none, then the returned projections correspond to the index of this energy window. Otherwise returns all energy windows. Defaults to None.
         index_time (int): If not none, then the returned projections correspond to the index of the time slot in gated SPECT. Otherwise returns all time slots. Defaults to None
+        use_FOV_mask (bool): If true, then use ta field of view mask obtained from DICOM file. Defaults to False.
     Returns:
         (SPECTObjectMeta, SPECTProjMeta, torch.Tensor[..., Ltheta, Lr, Lz]) where ... depends on if time slots are considered.
     """
@@ -184,6 +186,9 @@ def get_projections(
             print("Multiple energy windows found")
     if pytomography.verbose:
         print(f'Returned projections have dimensions ({" ".join(dimension_list)})')
+    if use_FOV_mask:
+        fov_mask = get_FOV_mask_from_projections(file)
+        projections = projections * fov_mask
     return projections
 
 def get_energy_window_bounds(file_NM: str, idx: int) -> tuple[float, float]:
@@ -229,7 +234,8 @@ def get_energy_window_scatter_estimate(
     sigma_r: float = 0,
     sigma_z: float = 0,
     N_sigmas: int = 3,
-    return_scatter_variance_estimate: bool = False
+    return_scatter_variance_estimate: bool = False,
+    use_FOV_mask: bool = False,
 ) -> torch.Tensor:
     """Gets an estimate of scatter projection data from a DICOM file using either the dual energy window (`index_upper=None`) or triple energy window method.
 
@@ -241,11 +247,12 @@ def get_energy_window_scatter_estimate(
         weighting_lower (float): Weighting of the lower scatter window. Defaults to 0.5.
         weighting_upper (float): Weighting of the upper scatter window. Defaults to 0.5.
         return_scatter_variance_estimate (bool): If true, then also return the variance estimate of the scatter. Defaults to False.
+        use_FOV_mask (bool): If true, then use ta field of view mask obtained from DICOM file. Defaults to False.
     Returns:
         torch.Tensor[Ltheta,Lr,Lz]: Tensor corresponding to the scatter estimate.
     """
     projections_all = get_projections(file).to(pytomography.device)
-    return get_energy_window_scatter_estimate_projections(file, projections_all, index_peak, index_lower, index_upper, weighting_lower, weighting_upper, proj_meta, sigma_theta, sigma_r, sigma_z, N_sigmas, return_scatter_variance_estimate)
+    return get_energy_window_scatter_estimate_projections(file, projections_all, index_peak, index_lower, index_upper, weighting_lower, weighting_upper, proj_meta, sigma_theta, sigma_r, sigma_z, N_sigmas, return_scatter_variance_estimate, use_FOV_mask)
 
 def get_energy_window_scatter_estimate_projections(
     file: str,
@@ -260,7 +267,8 @@ def get_energy_window_scatter_estimate_projections(
     sigma_r: float = 0,
     sigma_z: float = 0,
     N_sigmas: int = 3,
-    return_scatter_variance_estimate: bool = False
+    return_scatter_variance_estimate: bool = False,
+    use_FOV_mask: bool = False,
 ) -> torch.Tensor:
     """Gets an estimate of scatter projection data from a DICOM file using either the dual energy window (`index_upper=None`) or triple energy window method. This is seperate from ``get_energy_window_scatter_estimate`` as it allows a user to input projecitons that are already loaded/modified. This is useful for when projection data gets mixed for reconstructing multiple bed positions.
 
@@ -273,6 +281,7 @@ def get_energy_window_scatter_estimate_projections(
         weighting_lower (float): Weighting of the lower scatter window. Defaults to 0.5.
         weighting_upper (float): Weighting of the upper scatter window. Defaults to 0.5.
         return_scatter_variance_estimate (bool): If true, then also return the variance estimate of the scatter. Defaults to False.
+        use_FOV_mask (bool): If true, then use ta field of view mask obtained from DICOM file.
     Returns:
         torch.Tensor[Ltheta,Lr,Lz]: Tensor corresponding to the scatter estimate.
     """
@@ -282,6 +291,11 @@ def get_energy_window_scatter_estimate_projections(
     ww_upper = get_window_width(ds, index_upper) if index_upper is not None else None
     projections_lower = projections[index_lower]
     projections_upper = projections[index_upper] if index_upper is not None else None
+    if use_FOV_mask:
+        fov_mask = get_FOV_mask_from_projections(file)
+    else:
+        fov_mask = None
+        
     scatter = compute_EW_scatter(
         projections_lower,
         projections_upper,
@@ -295,7 +309,8 @@ def get_energy_window_scatter_estimate_projections(
         sigma_r,
         sigma_z,
         N_sigmas,
-        return_scatter_variance_estimate
+        return_scatter_variance_estimate,
+        fov_mask
     )
     return scatter
 

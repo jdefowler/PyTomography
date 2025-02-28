@@ -44,7 +44,7 @@ class SPECTSystemMatrix(SystemMatrix):
         object_initial = torch.ones(self.object_meta.shape).to(device)
         if self.object_initial_based_on_camera_path:
             for i in range(len(self.proj_meta.angles)):
-                cutoff_idx = int(np.ceil(self.object_meta.shape[0]/ 2 - self.proj_meta.radii[i]/self.object_meta.dr[0]))
+                cutoff_idx = int(np.ceil(self.object_meta.shape[0]/ 2 - self.proj_meta.radii[i]/self.object_meta.dr[0])) #+ 5 # +5 assumes 5 additional voxel between camera and object
                 if cutoff_idx<0:
                     continue
                 img_cutoff = torch.ones(self.object_meta.shape).to(device)
