@@ -150,7 +150,7 @@ def crystal_efficienies_to_sinogram(
         info (dict): PET geometry information dictionary
 
     Returns:
-        torch.Tensor: Sinogram of crystal efficiencies (shape [N_crystals_per_ring, N_crystals_per_ring])
+        torch.Tensor: Sinogram of crystal efficiencies
     """
     scanner_lut = get_scanner_LUT(info)
     nr_sectors_trans, nr_sectors_axial, nr_modules_axial, nr_modules_trans, nr_crystals_trans, nr_crystals_axial = info['rsectorTransNr'], info['rsectorAxialNr'], info['moduleAxialNr'], info['moduleTransNr'], info['crystalTransNr'], info['crystalAxialNr']
@@ -176,6 +176,45 @@ def crystal_efficienies_to_sinogram(
     crystal_sino[:,:,:] = crystal_efficiencies[id_a,ring_id_a-1] * crystal_efficiencies[id_b,ring_id_b-1]
 
     return torch.tensor(crystal_sino)
+
+
+def singles_to_randoms_sinogram(
+    singles_rate: torch.Tensor,
+    coincidence_window: np.float,
+    info: dict
+) -> torch.Tensor:
+    """Converts singles to a randoms sinogram
+    Args:
+        singles (torch.Tensor): Singles data (shape [N_crystals_per_ring, N_crystals_per_ring, N_rings])
+        coincidence_window (np.float): Coincidence window in seconds
+        info (dict): PET geometry information dictionary
+    Returns:
+        torch.Tensor: Sinogram of randoms (shape [N_crystals_per_ring, N_crystals_per_ring, N_rings])
+    """
+    scanner_lut = get_scanner_LUT(info)
+    nr_sectors_trans, nr_sectors_axial, nr_modules_axial, nr_modules_trans, nr_crystals_trans, nr_crystals_axial = info['rsectorTransNr'], info['rsectorAxialNr'], info['moduleAxialNr'], info['moduleTransNr'], info['crystalTransNr'], info['crystalAxialNr']
+    nr_rings = nr_sectors_axial * nr_modules_axial * nr_crystals_axial
+    nr_crystals_per_ring = nr_sectors_trans * nr_modules_trans * nr_crystals_trans
+    min_sector_difference = info['min_rsector_difference']
+    min_crystal_difference = min_sector_difference * nr_modules_trans * nr_crystals_trans
+    radial_size = int(nr_crystals_per_ring - 2 * min_crystal_difference - 1)
+    angular_size = int(nr_crystals_per_ring / 2)
+    distance_crystal_id_0_to_first_sector_center = (nr_modules_trans * nr_crystals_trans) / 2
+    detector_coordinates = np.zeros((angular_size, radial_size, 2, 2), dtype=np.float32)
+    ring_difference_size = nr_rings * nr_rings - nr_rings + 1
+    randoms_rate_sino = np.zeros((angular_size,radial_size,ring_difference_size))
+    
+    sinogram_detector_ids, ring_ids = compute_sinogram_ids(info)
+
+    id_a = sinogram_detector_ids[:, :, 0].unsqueeze(-1).expand(-1, -1, ring_ids.shape[0])
+    id_b = sinogram_detector_ids[:, :, 1].unsqueeze(-1).expand(-1, -1, ring_ids.shape[0])
+
+    ring_id_a = ring_ids[:, 0].view(1, 1, -1).expand(sinogram_detector_ids.shape[0], sinogram_detector_ids.shape[1], -1)
+    ring_id_b = ring_ids[:, 1].view(1, 1, -1).expand(sinogram_detector_ids.shape[0], sinogram_detector_ids.shape[1], -1)
+
+    randoms_rate_sino[:,:,:] = 2 * coincidence_window * singles_rate[id_a,ring_id_a-1] * singles_rate[id_b,ring_id_b-1]
+
+    return torch.tensor(randoms_rate_sino)
 
 def get_detector_ids_from_trans_axial_ids(
     ids_trans_crystal: torch.Tensor,
