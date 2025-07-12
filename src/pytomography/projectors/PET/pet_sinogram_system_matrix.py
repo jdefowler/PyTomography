@@ -52,6 +52,17 @@ class PETSinogramSystemMatrix(SystemMatrix):
         self.N_splits = N_splits
         self.TOF = self.proj_meta.tof_meta is not None
     
+    def _get_object_initial(self, device=None):
+        """Returns an initial object estimate used in reconstruction algorithms. By default, this is a tensor of ones with the same shape as the object metadata.
+
+        Returns:
+            torch.Tensor: Initial object used in reconstruction algorithm.
+        """
+        object_initial = torch.ones(self.object_meta.shape).to(device)
+        mask = (self.compute_normalization_factor() != 0)
+        object_initial = object_initial * mask.to(device)
+        return object_initial
+
     def _get_xyz_sinogram_coordinates(self, subset_idx: int = None):
         """Get the XYZ coordinates corresponding to the pair of crystals of the projection angle
 
