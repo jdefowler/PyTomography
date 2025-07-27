@@ -1,3 +1,3 @@
-scanner_name, min_rsector_difference, crystal_length, radius, crystalTransNr, crystalTransSpacing, crystalAxialNr, crystalAxialSpacing, submoduleAxialNr, submoduleAxialSpacing, submoduleTransNr, submoduleTransSpacing, moduleTransNr, moduleTransSpacing, moduleAxialNr, moduleAxialSpacing, rsectorTransNr, rsectorAxialNr, TOF, num_tof_bins, tof_range, tof_fwhm, file_format
-discovery_MI4, 4, 0.0, 380.56, 16, 4.03125, 9, 5.31556, 1, 0, 1, 0, 1, 0, 4, 50.64004, 34, 1, 1, 29, 735.7705, 57.71, 'RDFv10'
-discovery_MI5, 4, 0.0, 380.56, 16, 4.03125, 9, 5.31556, 1, 0, 1, 0, 1, 0, 5, 50.64004, 34, 1, 1, 29, 735.7705, 57.71, 'RDFv10'
+scanner_name, min_rsector_difference, crystal_length, radius, crystalTransNr, crystalTransSpacing, crystalAxialNr, crystalAxialSpacing, submoduleAxialNr, submoduleAxialSpacing, submoduleTransNr, submoduleTransSpacing, moduleTransNr, moduleTransSpacing, moduleAxialNr, moduleAxialSpacing, rsectorTransNr, rsectorAxialNr, TOF, num_tof_bins, tof_range, tof_fwhm, transFOV
+discovery_MI4, 4, 0.0, 380.56, 16, 4.03125, 9, 5.31556, 1, 0, 1, 0, 1, 0, 4, 50.64004, 34, 1, 1, 29, 735.7705, 57.71, 700
+discovery_MI5, 4, 0.0, 380.56, 16, 4.03125, 9, 5.31556, 1, 0, 1, 0, 1, 0, 5, 50.64004, 34, 1, 1, 29, 735.7705, 57.71, 700

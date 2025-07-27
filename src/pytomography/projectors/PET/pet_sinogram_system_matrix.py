@@ -59,7 +59,18 @@ class PETSinogramSystemMatrix(SystemMatrix):
             torch.Tensor: Initial object used in reconstruction algorithm.
         """
         object_initial = torch.ones(self.object_meta.shape).to(device)
-        mask = (self.compute_normalization_factor() != 0)
+
+        z = torch.arange(self.object_meta.shape[2]).view(1, 1, -1)
+        y = torch.arange(self.object_meta.shape[1]).view(1, -1, 1)
+        x = torch.arange(self.object_meta.shape[0]).view(-1, 1, 1)
+        radius = self.proj_meta.info['transFOV']/self.object_meta.dr[0]/2
+
+        # Distance squared from center in XY plane
+        dist_squared = (y - self.object_meta.shape[1]/2)**2 + (x - self.object_meta.shape[0]/2)**2
+        radial_mask = dist_squared <= radius**2
+
+        mask = radial_mask.expand(-1, -1, self.object_meta.shape[2])
+
         object_initial = object_initial * mask.to(device)
         return object_initial
 

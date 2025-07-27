@@ -7,7 +7,7 @@ import numpy as np
 import h5py
 from pytomography.metadata.PET import PETTOFMeta
 
-def get_detector_info(scanner_name: str):
+def get_detector_info(scanner_name: str, axial_angle_offset: None = None):
     """Obtains the PET geometry information for a given scanner.
 
     Args:
@@ -34,6 +34,8 @@ def get_detector_info(scanner_name: str):
     info['NrCrystalsPerRing'] = info['crystalTransNr'] * info['submoduleTransNr'] * info['moduleTransNr'] * info['rsectorTransNr']
     info['NrRings'] = info['crystalAxialNr'] * info['submoduleAxialNr'] * info['moduleAxialNr'] * info['rsectorAxialNr']
     info['firstCrystalAxis'] = 0 # first crystal along X axis
+    if axial_angle_offset is not None:
+        info['axial_angle_offset'] = axial_angle_offset
     return info
 
 def get_tof_meta(scanner_name: str) -> PETTOFMeta:

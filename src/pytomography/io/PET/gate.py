@@ -37,7 +37,7 @@ def get_aligned_attenuation_map(
     object_origin_amap = (- np.array(shape_amap) / 2 + 0.5) * (np.array(dr_amap))
     dr = object_meta.dr
     shape = object_meta.shape
-    object_origin = object_origin = (- np.array(shape) / 2 + 0.5) * (np.array(dr))
+    object_origin = (- np.array(shape) / 2 + 0.5) * (np.array(dr))
     M_PET = np.array([
         [dr[0],0,0,object_origin[0]],
         [0,dr[1],0,object_origin[1]],
